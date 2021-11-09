@@ -46,6 +46,7 @@ program nested
       advCellsForEdge  ! address of each cell contrib to edge
 
    real (kind=RKIND) :: &
+      wgt, sgn, &
       relErr,           &! relative error in result
       refVal,           &! reference value for correctness
       edgeFlx            ! temp for contrib to edge fluxes
@@ -262,7 +263,7 @@ program nested
       !$omp    map(to: normalThicknessFlux, advMaskHighOrder, &
       !$omp            nAdvCellsForEdge, advCellsForEdge, &
       !$omp            advCoefs, advCoefs3rd, tracerCur) &
-      !$omp    map(alloc: wgtTmp, sgnTmp) &
+      !$omp    private(k, i, iCell, kmin, kmax, coef1, coef3, wgt, sgn) &
       !$omp    map(from: highOrderFlx)
       !$omp distribute
 #endif
@@ -271,10 +272,6 @@ program nested
 #ifdef USE_OMPOFFLOAD
          !$omp parallel do simd
          do k = 1, nVertLevels
-            wgtTmp(k,iEdge) = normalThicknessFlux   (k,iEdge)* &
-                        advMaskHighOrder(k,iEdge)
-            sgnTmp(k,iEdge) = sign(1.0_RKIND, &
-                             normalThicknessFlux(k,iEdge))
             highOrderFlx(k,iEdge) = 0.0_RKIND
          end do
 #else
@@ -296,9 +293,13 @@ program nested
             coef3 = advCoefs3rd    (i,iEdge)*coef3rdOrder
 #ifdef USE_OMPOFFLOAD
             !$omp parallel do simd
-            do k = kmin, kmax
-               highOrderFlx(k,iEdge) = highOrderFlx(k,iEdge) + tracerCur(k,iCell)* &
-                           wgtTmp(k,iEdge)*(coef1 + coef3*sgnTmp(k,iEdge))
+            do k = 1, nVertLevels
+               wgt = normalThicknessFlux(k,iEdge) * advMaskHighOrder(k,iEdge)
+               sgn = sign(1.0_RKIND, normalThicknessFlux(k,iEdge))
+               if ((k >= kmin) .and. (k <= kmax)) then
+                 highOrderFlx(k,iEdge) = highOrderFlx(k,iEdge) + tracerCur(k,iCell)* &
+                           wgt*(coef1 + coef3*sgn)
+               end if
             end do ! k loop
 #else
             do k = kmin, kmax
