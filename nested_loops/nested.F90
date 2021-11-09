@@ -208,7 +208,6 @@ program nested
          kmax  = maxLevelCell(iCell)
          coef1 = advCoefs       (i,iEdge)
          coef3 = advCoefs3rd    (i,iEdge)*coef3rdOrder
-         !$omp parallel do simd
          do k = kmin, kmax
 #ifdef USE_OMPOFFLOAD
             refFlx(k,iEdge) = refFlx(k,iEdge) + tracerCur(k,iCell)* &
@@ -262,8 +261,8 @@ program nested
       !$omp target teams thread_limit(max_vert_levels) &
       !$omp    map(to: normalThicknessFlux, advMaskHighOrder, &
       !$omp            nAdvCellsForEdge, advCellsForEdge, &
-      !$omp            advCoefs, advCoefs3rd, tracerCur, &
-      !$omp            wgtTmp, sgnTmp) &
+      !$omp            advCoefs, advCoefs3rd, tracerCur) &
+      !$omp    map(alloc: wgtTmp, sgnTmp) &
       !$omp    map(from: highOrderFlx)
       !$omp distribute
 #endif
