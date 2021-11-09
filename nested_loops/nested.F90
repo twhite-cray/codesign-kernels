@@ -17,6 +17,8 @@ program nested
    integer, parameter :: &
       RKIND = selected_real_kind(12) ! default double precision
 
+   integer, parameter :: max_vert_levels = 128
+
    integer ::       &! model size variables
       ierr,         &! error flag
       nIters,       &! number of loop iterations to run
@@ -88,6 +90,8 @@ program nested
    open (15, file='nested.nml')
    read (15, nml=nested_nml)
    close(15)
+
+   if (nVertLevels > max_vert_levels) stop "nVertLevels > max_vert_levels"
 
    ! Allocate various arrays
    allocate(nAdvCellsForEdge(nEdges), &
@@ -204,6 +208,7 @@ program nested
          kmax  = maxLevelCell(iCell)
          coef1 = advCoefs       (i,iEdge)
          coef3 = advCoefs3rd    (i,iEdge)*coef3rdOrder
+         !$omp parallel do simd
          do k = kmin, kmax
 #ifdef USE_OMPOFFLOAD
             refFlx(k,iEdge) = refFlx(k,iEdge) + tracerCur(k,iCell)* &
@@ -254,17 +259,18 @@ program nested
       !$acc    private(wgtTmp, sgnTmp, flxTmp)
 #endif
 #ifdef USE_OMPOFFLOAD
-      !$omp target teams &
+      !$omp target teams thread_limit(max_vert_levels) &
       !$omp    map(to: normalThicknessFlux, advMaskHighOrder, &
       !$omp            nAdvCellsForEdge, advCellsForEdge, &
       !$omp            advCoefs, advCoefs3rd, tracerCur, &
       !$omp            wgtTmp, sgnTmp) &
       !$omp    map(from: highOrderFlx)
-      !$omp distribute parallel do
+      !$omp distribute
 #endif
       do iEdge = 1, nEdges
          ! compute some common intermediate factors
 #ifdef USE_OMPOFFLOAD
+         !$omp parallel do simd
          do k = 1, nVertLevels
             wgtTmp(k,iEdge) = normalThicknessFlux   (k,iEdge)* &
                         advMaskHighOrder(k,iEdge)
@@ -290,6 +296,7 @@ program nested
             coef1 = advCoefs       (i,iEdge)
             coef3 = advCoefs3rd    (i,iEdge)*coef3rdOrder
 #ifdef USE_OMPOFFLOAD
+            !$omp parallel do simd
             do k = kmin, kmax
                highOrderFlx(k,iEdge) = highOrderFlx(k,iEdge) + tracerCur(k,iCell)* &
                            wgtTmp(k,iEdge)*(coef1 + coef3*sgnTmp(k,iEdge))
@@ -311,7 +318,7 @@ program nested
   
       end do ! edge loop
 #ifdef USE_OMPOFFLOAD
-      !$omp end distribute parallel do
+      !$omp end distribute
       !$omp end target teams
 #endif
    end do ! iteration loop
@@ -373,7 +380,7 @@ program nested
       !$omp            nAdvCellsForEdge, advCellsForEdge, cellMask, &
       !$omp            advCoefs, advCoefs3rd, tracerCur) &
       !$omp    map(from: highOrderFlx)
-      !$omp distribute parallel do collapse(2) &
+      !$omp distribute parallel do simd collapse(2) &
       !$omp    private(iCell, coef1, coef2, coef3, edgeFlx,csgn)
 #endif
       do iEdge = 1, nEdges
@@ -394,7 +401,7 @@ program nested
       end do ! vertical loop
       end do ! iEdge loop  
 #ifdef USE_OMPOFFLOAD
-      !$omp end distribute parallel do
+      !$omp end distribute parallel do simd
       !$omp end target teams
 #endif
    end do ! iteration loop
