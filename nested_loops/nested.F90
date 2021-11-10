@@ -8,6 +8,12 @@
 !
 !***********************************************************************
 
+#ifdef _CRAYFTN
+#define PARALLEL_DO simd
+#else
+#define PARALLEL_DO parallel do
+#endif
+
 program nested
 
    use timerMod
@@ -254,17 +260,18 @@ program nested
       !$acc    private(wgtTmp, sgnTmp, flxTmp)
 #endif
 #ifdef USE_OMPOFFLOAD
-      !$omp target teams &
+      !$omp target teams thread_limit(128) &
       !$omp    map(to: normalThicknessFlux, advMaskHighOrder, &
       !$omp            nAdvCellsForEdge, advCellsForEdge, &
       !$omp            advCoefs, advCoefs3rd, tracerCur, &
       !$omp            wgtTmp, sgnTmp) &
       !$omp    map(from: highOrderFlx)
-      !$omp distribute parallel do
+      !$omp distribute
 #endif
       do iEdge = 1, nEdges
          ! compute some common intermediate factors
 #ifdef USE_OMPOFFLOAD
+         !$omp PARALLEL_DO
          do k = 1, nVertLevels
             wgtTmp(k,iEdge) = normalThicknessFlux   (k,iEdge)* &
                         advMaskHighOrder(k,iEdge)
@@ -290,6 +297,7 @@ program nested
             coef1 = advCoefs       (i,iEdge)
             coef3 = advCoefs3rd    (i,iEdge)*coef3rdOrder
 #ifdef USE_OMPOFFLOAD
+            !$omp PARALLEL_DO
             do k = kmin, kmax
                highOrderFlx(k,iEdge) = highOrderFlx(k,iEdge) + tracerCur(k,iCell)* &
                            wgtTmp(k,iEdge)*(coef1 + coef3*sgnTmp(k,iEdge))
@@ -311,7 +319,7 @@ program nested
   
       end do ! edge loop
 #ifdef USE_OMPOFFLOAD
-      !$omp end distribute parallel do
+      !$omp end distribute
       !$omp end target teams
 #endif
    end do ! iteration loop
@@ -373,7 +381,7 @@ program nested
       !$omp            nAdvCellsForEdge, advCellsForEdge, cellMask, &
       !$omp            advCoefs, advCoefs3rd, tracerCur) &
       !$omp    map(from: highOrderFlx)
-      !$omp distribute parallel do collapse(2) &
+      !$omp distribute PARALLEL_DO collapse(2) &
       !$omp    private(iCell, coef1, coef2, coef3, edgeFlx,csgn)
 #endif
       do iEdge = 1, nEdges
@@ -394,7 +402,7 @@ program nested
       end do ! vertical loop
       end do ! iEdge loop  
 #ifdef USE_OMPOFFLOAD
-      !$omp end distribute parallel do
+      !$omp end distribute PARALLEL_DO
       !$omp end target teams
 #endif
    end do ! iteration loop
